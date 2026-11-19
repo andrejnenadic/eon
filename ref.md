@@ -408,3 +408,122 @@ const T2 = struct {
 // invalid, T1 has a field named 'y' of type u32 and T2 has a field with the same name of type usize
 const T0 = struct <: T1, T2 { }
 ```
+
+Enum types
+----------
+
+An enum type denotes the set of possible named values a variable can hold represented as unsigned integers during runtime.
+
+The value of each enum field is part of that enum's type; it must evaluate to a non-negative constant representable by a value of an unsigned integer type known during compilation. If a value is not explicitly specified it defaults to the lowest non taken value greater than the value of the field before it.
+
+Individual enum field can be accessed by their names with the *dot notation*.
+
+```
+EnumType  = "enum" "{" { EnumFieldDecl ";" } "}" .
+EnumFieldDecl = Identifier [ "=" Expression ] .
+```
+
+```
+const sat: u8 = 11;
+const week_days_t: type = enum {
+    monday;         // = 0
+    tuesday = 5;
+    wednesday;      // = 6
+    thursday;       // = 7
+    friday;         // = 8
+    saturday = sat;
+    sunday;         // = 12
+};
+
+const monday: week_days_t = week_days_t.monday; // fully specified enum field
+const monday: week_days_t = .monday; // implicitly specified enum field
+```
+
+Union types
+-----------
+
+A union type represents a value that can be one of several *case types*. Their size is dependant on the size of the biggest case type.
+
+```
+UnionType = CaseType { "|" CaseType }
+CaseType  = Type
+```
+
+Active case type of an individual value of a union type must be explicitly checked before usage using the *pattern matching* keyword `is`, after which it can either be casted into the correct type, or depending on the context in which pattern matching was performed, it may be *captured* into the correct type.
+
+```
+const byte: u8 = 'x';
+const float: f64 = 123.456;
+const slice: []f32 = some_arr[:];
+
+const my_union_t: type = u8 | f64 | []f32; // has size = 64 bits + prefix, because the largest case type is 64 bits
+
+var union: my_union_t = byte;
+union = float;
+
+discard (union is f64); // true
+discard (union is u8); // false
+discard (union is u64); // compilation error, my_union_t can never be of type u64
+
+union = slice;
+discard (union is f32); // false
+discard (union is []f32); // true
+
+const slice_from_union: []f32 = union as []f32;
+```
+
+Pointer types
+-------------
+
+A pointer type denotes the set of all pointers to variables of a given type, called the base type of the pointer. The value of a pointer to a non-existant variable is null. Essentially, a pointer holds an address of a memory location holding its base type.
+
+```
+PointerType = "*" [ "const" ] BaseType .
+BaseType    = Type .
+```
+
+Accessing an address of a variable, as well as the memory a pointer points to, is done using the *dot notation*.
+
+```
+var x: u32 = 123;
+const ptr: *u32 = x.&; // ptr holds the address of 'x'
+ptr.* = 5; // same as 'x = 5;'
+```
+
+A pointer type can only hold an address of a variable with *less or equal strictness* in terms of *mutability*. This means a mutable pointer can only point to a mutable variable, while an immutable pointer can point to either an immutable or mutable variable. If an immutable pointer points to a mutable variable, it can not be used to modify its value.
+
+```
+var x: u32 = 123;
+const y: u32 = 321;
+
+var ptr: *const u32 = x.& // ptr holds the address of 'x'
+ptr.* = 5; // invalid, ptr points to an immutable value
+
+ptr = y.&; // valid, only pointed value is immutable, the actual variable holding the address (pointer) is still mutable
+ptr.* = 5; // invalid, even though ptr points to a mutable value it considers it immutable due to its own type
+```
+
+Nullable types
+--------------
+
+A nullable type `?T` represents all values of its underlying value type T and an additional `null` value. For example, you can assign any of the following three values to a `bool?` variable: `true`, `false`, or `null`. An underlying value type T must not be a nullable type itself.
+
+```
+NullableType        = "?" UnderlyingValueType .
+UnderlyingValueType = Type .
+```
+
+A value of a nullable type may only be used in a comparison against null in order to *unwrap it* into its underlying value type using the *capture* syntax.
+
+If a fallback is provided for a nullable value immediately before use, it may be used as its underlying value without unwrapping.
+
+```
+var x: ?u32 = null;
+
+if (x != null) |safe_x| {
+    // safe_x is of type 'u32'
+}
+
+x ??= 7; // if x is null, set it to 7
+var y: u32 = x - 5; // valid, x has a provided fallback in a line above
+```
