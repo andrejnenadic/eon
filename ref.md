@@ -251,7 +251,7 @@ A *type* determines a set of values together with operations and methods specifi
 
 ```
 Type     = TypeName | TypeLit .
-TypeName = identifier | FunctionName | FunctionInvocation .
+TypeName = identifier | FunctionName | FunctionInvocation | void .
 TypeLit  = ArrayType | StructType | PointerType | FunctionType | EnumType | SliceType | NullableType .
 ```
 
@@ -345,7 +345,7 @@ A struct is a sequence of named elements, called fields, each of which has a nam
 
 ```
 StructType    = "struct" "{" { FieldDecl ";" } "}" .
-FieldDecl     = Identifier Type .
+FieldDecl     = Identifier ":" Type .
 ```
 
 ```
@@ -506,7 +506,9 @@ ptr.* = 5; // invalid, even though ptr points to a mutable value it considers it
 Nullable types
 --------------
 
-A nullable type `?T` represents all values of its underlying value type T and an additional `null` value. For example, you can assign any of the following three values to a `bool?` variable: `true`, `false`, or `null`. An underlying value type T must not be a nullable type itself.
+A nullable type `?T` represents all values of its underlying value type T and an additional `null` value. For example, you can assign any of the following three values to a `?bool` variable: `true`, `false`, or `null`. An underlying value type T must not be a nullable type itself.
+
+Value `null` represents the absence of a value.
 
 ```
 NullableType        = "?" UnderlyingValueType .
@@ -524,6 +526,40 @@ if (x != null) |safe_x| {
     // safe_x is of type 'u32'
 }
 
+if (x) |safe_x| {
+    // shorthand capture, means "if x exists"
+}
+
 x ??= 7; // if x is null, set it to 7
 var y: u32 = x - 5; // valid, x has a provided fallback in a line above
+```
+
+Function pointer types
+----------------------
+
+A function pointer type is a special kind of pointer which holds the address of a compiled function in order to allow creating *virtual method tables* (or vtables for short).
+
+The actual function pointer type only contains the address of the starting instruction compiled from a function and cannot be dereferenced directly. Dereferencing a function would mean **reading the value of a function**, which is meaningless because a function has no value, instead it defines how (a) value is processed.
+
+More broadly, a function defines *behaviour* which is why only its address can be kept as data.
+
+```
+FunctionPointerType = "*" "fn" Signature .
+Signature     = Parameters Result .
+Result        = Type .
+Parameters    = "(" [ ParameterList [ "," ] ] ")" .
+ParameterList = ParameterDecl { "," ParameterDecl } .
+ParameterDecl = Identifier ":" Type .
+```
+
+In order to invoke a function based on its address, a new *function identifier* must be declared and assigned that address.
+
+```
+const print_fn: *fn (string: []u8) void = print; // 'print' is a function available in this scope with the exact same signature
+
+fn my_print(string: []u8) void = print_fn;
+
+// these 2 calls do the exact same thing, and even compile to the same instruction
+print("Hello Eon");
+my_print("Hello Eon"); 
 ```
