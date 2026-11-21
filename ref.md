@@ -80,7 +80,7 @@ The following keywords are reserved and may not be used as identifiers.
 const       if          continue        import
 var         else        as              struct
 function    switch      is              enum
-export      while       defer
+pub         while       defer
 return      break       discard
 ```
 
@@ -94,7 +94,7 @@ The following character sequences represent operators (including assignment oper
 -    |     -=    |=     ||    <     <=    [    ]    ??=    $|>     ?||>>    &&=
 *    ^     *=    ^=     ++    >     >=    {    }    |>     $||>    ?$|>     ||=
 /    <<    /=    <<=    --    =           ,    ;    ||>    ?|>     ?$||>    <:
-%    >>    %=    >>=          !           .    :    |>>    ?||>    !|>
+%    >>    %=    >>=          !           .    :    |>>    ?||>    !|>      ::
 ```
 
 Integer literals
@@ -562,4 +562,143 @@ fn my_print(string: []u8) void = print_fn;
 // these 2 calls do the exact same thing, and even compile to the same instruction
 print("Hello Eon");
 my_print("Hello Eon"); 
+```
+
+Type identity
+-------------
+
+Two types are *either* identical ("the same") or *different*.
+
+-	Two array types are identical if they have identical element types and the same array length
+-	Two slice types are identical if they have identical element types
+-	Two struct types are identical if they have the same sequence of fields, and if corresponding pairs of fields have the same names, identical types, and identical alignments
+-	Two pointer types are identical if they have identical base types
+-	Two function types are identical if they have the same signature
+
+Assignability
+-------------
+
+A value x of type V is *assignable* to a variable of type T ("x is assignable to T") if one of the following conditions applies:
+
+-	V and T are identical
+-	V is a subtype of T
+-	T is a union and V is a case type of T
+
+Blocks
+======
+
+A *block* is a possibly empty sequence of declarations and statements within matching brace brackets.
+
+```
+Block         = "{" StatementList "}" .
+StatementList = { Statement ";" } .
+```
+
+In addition to explicit blocks in the source code, each file has an implicit *module block* allowing for comptime code and conditional compilation.
+
+Blocks nest and influence *scoping*.
+
+Declarations and scope
+======================
+
+A declaration binds an identifier to a constant, type, variable, function, or label. Every identifier in a program must be declared. No identifier may be declared twice in the same block.
+
+```
+Declaration  = ConstDecl | VarDecl | FunctionDecl .
+```
+
+Eon is lexically scoped using blocks:
+
+-	The scope of a predeclared identifier encompasses all blocks
+-	The scope of an identifier denoting a constant or function declared at top level (outside any function) is the module block
+-	The scope of an imported identifier is the module block of the file containing the import declaration
+-	The scope of an identifier denoting function parameter is the function body
+-	The scope of a constant or variable identifier declared inside a block begins at the end of the declaration and ends at the end of the innermost containing block
+
+An identifier declared in a block may not be redeclared in an inner block.
+
+Every non-exported declared identifier must be used or consumed within its scope.
+
+Label scopes
+------------
+
+Labels are declared by labeled statements and are used in the "break" and "continue" statements. It is illegal to define a label that is never used. In contrast to other identifiers, labels do not conflict with identifiers that are not labels. The scope of a label is the body of the function in which it is declared and excludes the body of any nested function.
+
+Predeclared identifiers
+-----------------------
+
+The following identifiers are implicitly declared in all scopes.
+
+```
+Types:
+    void
+    type
+    bool
+    i8 i16 i32 i64
+    u8 u16 u32 u64
+    f32 f64
+
+Constants:
+    true false
+
+Zero value:
+    null
+```
+
+Exported identifiers
+--------------------
+
+An identifier may be exported to permit access to it from another module.
+
+An identifier is exported if both:
+
+-	the identifier's declaration is preceded by the keyword `pub`
+-	the identifier is declared in the module block
+
+All other identifiers are not exported.
+
+Uniqueness of identifiers
+-------------------------
+
+Given a set of identifiers, an identifier is called *unique* if it is different from every other in the set. Two identifiers are different if they are spelled differently, or if they appear in different modules. Otherwise, they are the same.
+
+Variable declarations
+---------------------
+
+A variable declaration creates one variable, binds the corresponding identifier to it, and giving it a type and an optional initial value.
+
+```
+VarDecl = "var" Identifier [ ( ":" Type [ "=" Expression ] ) | ( "=" Expression ) ] .
+ConstDecl = "const" Identifier [ ":" Type ] "=" Expression .
+```
+
+```
+var a: u32 = 123;
+var b = 456; // infers type as i32
+var c: bool; // value is undefined, must be assigned before use
+var d = true; // infers type as bool
+
+const x: f32 = 123.456;
+const y = 123.456; // infers type as f64
+```
+
+If a type is not explicitly specified, an initial value must be given in which case the variable assumes the *most specific* type that can hold the given value. This is called *type inference*.
+
+The predeclared identifier `null` cannot be used to initialize (as the inital value of) a variable without an explicit type.
+
+Function declarations
+---------------------
+
+A function declaration binds an identifier, the *function name*, to a function.
+
+```
+FunctionDecl = "fn" FunctionName Signature FunctionBody .
+FunctionName = identifier .
+FunctionBody = Block .
+```
+
+```
+fn add_two(number: i32) i32 {
+    return number + 2;
+}
 ```
