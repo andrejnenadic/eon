@@ -1040,3 +1040,90 @@ Logical operators apply to boolean values and yield a result of the same type as
 ||    conditional OR     p || q  is  "if p then true else q"
 !     NOT                !p      is  "not p"
 ```
+
+Pipe Expressions
+----------------
+
+*Pipe expressions* are a special type of expressions which allow chaining an arbitrary number of expressions including other pipe expressions.
+
+A *pipe operator* consists of its base form `|>` immediately preceded or followed by optional modifiers `|`, `>`, `?`, `!`, or `$`.
+
+```
+PipeExpr     = Expression PipeOperator Expression .
+PipeOperator = [ "?" | "!" ] [ "$" ] [ "|" ] BasePipe [ ">" ] .
+BasePipe     = "|>"
+```
+
+Fundamentally, a pipe passes the current value inside the *pipeline* to the next expression in the chain. A pipeline consists of a chain of expressions connected by pipes which can modify the singular value held inside the pipeline.
+
+Evaluating a pipeline means evaluating all expressions within it. A pipeline evaluates to type T if the last expression evaluated by a *thin pipe* gave result to a value of type T.
+
+In terms of *modifying the value inside a pipeline*, pipes split into 2 mutually exclusive categories:
+
+-	Thin pipes, which modify the value inside the pipeline by replacing it with the result of the expression they evaluated. An expression after a thin pipe may only evaluate to void if it is the last pipe in the pipeline.
+-	Fat pipes, which preserve the value inside the pipeline. An expressions after a fat pipe must evaluate to void.
+
+In terms of *handing the value to the next expression*, pipes split into 3 mutually exclusive categories:
+
+-	Forward pipes, which can pass the value inside the pipeline as the first argument of a call expression or as the target of a statement.
+-	Reverse pipes, which can only pass the value inside the pipeline as the last argument of a call expression.
+-	Capture pipes, which assign the value inside the pipeline to an identifier `$` made accessible only within the next expression in the pipeline.
+
+In terms of *nullability*, pipes split into 2 mutually exclusive categories:
+
+-	Optional pipes, which only evaluate the next expression if the current value is not null.
+-	Fallback pipes, which only evaluate the next expression if the current value is null. This modifier also stops the pipe from passing a value to the next expression.
+
+Nullability modifiers are only usable if the current value inside the pipeline is of a nullable type.
+
+Fallback modifier may not be used along reverse or capture modifiers because it prevents the value inside the pipeline (which is known to be null) from being passed on to the next expression.
+
+Given these modifiers and their restrictions, the following pipe operators are possible:
+
+```
+|>      Thin pipe
+|>>     Thin reverse pipe
+$|>     Thin capture pipe
+?|>     Thin optional pipe
+?|>>    Thin optional reverse pipe
+?$|>    Thin optional capture pipe
+!|>     Thin fallback pipe
+
+||>     Fat pipe
+||>>    Fat reverse pipe
+$||>    Fat capture pipe
+?||>    Fat optional pipe
+?||>>   Fat optional reverse pipe
+?$||>   Fat optional capture pipe
+!||>    Fat fallback pipe
+```
+
+A thin fallback pipe evaluates its expression only if the current value is null, in which case it sets the value inside the pipeline to the expressions result.
+
+A fat fallback pipe evaluates its expression only if the current value is null after which it *terminates* the pipeline.
+
+Optional pipes terminate the pipeline if the current value inside it is null.
+
+Terminating a pipeline means preventing any further expressions within the terminated pipeline from evaluating. A terminated pipeline always evaluates to null or void depending if its value is used in an expression or not.
+
+```
+const x: u32 = 5;
+
+x |> add_two() | print_number(); // same as print_number(add_two(x))
+
+// more extreme example
+const header: ?[]u8 = add_five(x)               // starting value inside the pipeline is the result of add_five(5)
+    |> add_two()                                // call add_two with the current value 
+    ||> print_number()                          // print the current value, preserving it
+    |> get_user_by_id()                         // this may return null
+    !||> log_error("User not found")            // if the user is not found, log it out and terminate the pipeline
+    $|> $.username                              // continue the pipeline with the user's username
+    $||> log_info($.[5:])                       // log out the user's username past the fifth character
+    |> user_attempt_auth(password)              // user_attempt_auth(username, password), say this returns a cookie if successful and null on failure
+    ?|>> write_http_header(.Auth);              // if cookie is not null executes write_http_header(.Auth, cookie), if it is null terminates
+
+get_user_cart_by_id(x)                          // may return null
+    !|> .{ items: .{}, price: 0 }               // if cart is null, create a default replacement
+    |> cart_add_item(item)                      // this returns the added item
+    |> discard;                                 // pass the value to discard in order to get the whole pipeline to evaluate to void
+```
