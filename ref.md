@@ -589,6 +589,8 @@ Blocks
 
 A *block* is a possibly empty sequence of declarations and statements within matching brace brackets.
 
+A block is a *named block* if it is directly preceded by a label.
+
 ```
 Block         = "{" StatementList "}" .
 StatementList = { Statement ";" } .
@@ -617,12 +619,10 @@ Eon is lexically scoped using blocks:
 
 An identifier declared in a block may not be redeclared in an inner block.
 
-Every non-exported declared identifier must be used or consumed within its scope.
+Labels
+------
 
-Label scopes
-------------
-
-Labels are declared by labeled statements and are used in the "break" and "continue" statements. It is illegal to define a label that is never used. In contrast to other identifiers, labels do not conflict with identifiers that are not labels. The scope of a label is the body of the function in which it is declared and excludes the body of any nested function.
+Labels are declared right before an opening brace bracket of a block and are used in the "break" and "continue" statements. It is illegal to define a label that is never used. In contrast to other identifiers, labels do not conflict with identifiers that are not labels. The scope of a label is the body of the function in which it is declared and excludes the body of any nested function.
 
 Predeclared identifiers
 -----------------------
@@ -686,10 +686,14 @@ If a type is not explicitly specified, an initial value must be given in which c
 
 The predeclared identifier `null` cannot be used to initialize (as the inital value of) a variable without an explicit type.
 
+It is illegal to define a variable that is never used or exported.
+
 Function declarations
 ---------------------
 
 A function declaration binds an identifier, the *function name*, to a function.
+
+It is illegal to define a function that is never used or exported.
 
 ```
 FunctionDecl = "fn" FunctionName Signature FunctionBody .
@@ -701,4 +705,338 @@ FunctionBody = Block .
 fn add_two(number: i32) i32 {
     return number + 2;
 }
+```
+
+Expressions
+===========
+
+An expression specifies the *computation* of a value by applying operators and functions to operands.
+
+Operands
+--------
+
+Operands denote the elementary values in an expression. An operand may be a literal, a named block, an identifier denoting a constant, variable, or function, or an expression.
+
+```
+Operand     = Literal | identifier  [ TypeArgs ] | Expression .
+Literal     = BasicLit | CompositeLit .
+BasicLit    = int_lit | float_lit | char_lit | string_lit .
+```
+
+Qualified identifiers
+---------------------
+
+A *qualified identifier* is an identifier qualified with a module name prefix.
+
+```
+QualifiedIdent = ModuleName "::" identifier .
+```
+
+A qualified identifier accesses an identifier in a different module, which must be imported. The identifier must be exported and declared in the module block of that module.
+
+Composite literals
+------------------
+
+Composite literals construct new values for structs and arrays.
+
+```
+CompositeLit       = [LiteralType] LiteralValue .
+LiteralType        = StructType | ArrayType .
+LiteralValue       = StructLiteralValue | ArrayLiteralValue
+StructLiteralValue = "." "{" [ KeyedElementList [ "," ] ] "}"
+ArrayLiteralValue  = "." "{" [ ElementList [ "," ] ] "}"
+KeyedElementList   = KeyedElement { "," KeyedElement } .
+ElementList        = Element { "," Element } .
+KeyedElement       = Key ":" Element .
+Key                = FieldName | Expression | LiteralValue .
+FieldName          = identifier .
+Element            = Expression | LiteralValue .
+```
+
+A literal type may be omitted from a composite literal if it is possible to deduce its type from the context in which it is being created.
+
+For struct literals the following rules apply:
+
+-	Every element must have a key
+-	Each key must be a valid field selector for a field of the struct; the key selects that field
+-	The element list must have an element for each struct field
+
+Following ways of assigning a struct literal to a variable are valid:
+
+```
+const vector2_t: type = struct {
+    x: f32;
+    y: f32;
+};
+
+const v1: vector2_t = vector2_t.{
+    x: 5,
+    y: 7.5,
+};
+
+const v2 = vector2_t.{ // the variable type is inferred
+    x: 5,
+    y: 7.5,
+};
+
+const v3: vector2_t = .{ // the struct literal type is inferred
+    x: 5,
+    y: 7.5,
+};
+```
+
+For array literals the following rules apply:
+
+-	Each element has an associated integer index marking its position in the array
+-	An element uses the previous element's index plus one, with the first element having the index 0
+-	The element list does not need to have an element for each position in the array, omitted elements will have *undefined* memory
+
+Following ways of assigning an array literal to a variable are valid:
+
+```
+const arr1: [16]u32 = [16]u32.{ 1, 2, 3, 4, 5 }; // remaining elements contain undefined values
+
+const arr2 = [16]u32.{ 1, 2, 3, 4, 5 }; // the variable type is inferred
+
+const arr3: [16]u32 = .{ 1, 2, 3, 4, 5 }; // the array literal type is inferred
+```
+
+Primary expressions
+-------------------
+
+Primary expressions are the operands for unary and binary expressions.
+
+```
+PrimaryExpr   = Operand |
+                Cast |
+                PrimaryExpr Selector |
+                PrimaryExpr Index |
+                PrimaryExpr Slice |
+                PrimaryExpr Arguments .
+
+Selector      = "." identifier .
+Index         = "." int_lit |
+                "." "[" Expression "]" .
+Slice         = "." "[" [ Expression ] ":" [ Expression ] "]" .
+Arguments     = "(" [ ExpressionList [ "," ] ] ")" .
+ExpressionList = Expression { "," Expression } .
+```
+
+Selectors
+---------
+
+For a primary expression x, the selector expression `x.f` denotes the field f of the value x. The identifier f is called the (field) *selector*. The type of the selector expression is the type of f.
+
+```
+const vector2_t = struct {
+    x: f32;
+    y: f32;
+};
+
+const v = vector2_t.{
+    x: 1.55,
+    y: 87.53,
+};
+
+const x: f32 = v.x;
+const y: f32 = v.y;
+```
+
+Index expressions
+-----------------
+
+A primary expression of the form `a.5` or `a.[x]` denotes the element of the array or slice a indexed by x. The value x is called the *index*. Literal indices may be specified without brackets. The type of an index expression is the type of the element.
+
+```
+const arr: [3]u16 = .{ 1, 2, 3 };
+const a: u16 = arr.0; // = 1
+
+const i: usize = arr.1; // = 2
+const b: u16 = arr.[i]; // same as arr.2, = 3
+```
+
+Slice expressions
+-----------------
+
+Slice expressions construct a slice from an array or a slice operand by specifying a *low* and *high* bound. The type of a slice expression is a slice type with the element type equal to the element type of the used array or slice.
+
+For an array or a slice the primary expression `a.[low:high]` constructs a new slice. The *indices* low and high select which elements of operand a appear in the result. The result has indices starting at 0 and length equal to high - low.
+
+For convenience, any of the indices may be omitted. A missing low index defaults to zero; a missing high index defaults to the length of the sliced operand:
+
+```
+const a: [5]f32 = .{ 1, 2, 3, 4, 5 };
+const s: []f32 = a.[1:3]; // = .{ 2, 3, 4 }
+
+discard a.[2:];  // same as a[2 : a.len]
+discard a.[:3];  // same as a[0 : 3]
+discard a.[:];   // same as a[0 : a.len]
+```
+
+Addressing expressions
+----------------------
+
+For an operand x of type T, the address expression `x.&` generates a pointer of type *T to x. The operand must be addressable, that is, either a variable, pointer indirection, or slice indexing operation; or a field selector of an addressable struct operand; or an array indexing operation of an addressable array.
+
+For an operand x of pointer type *T, the *pointer indirection* (dereferencing) `x.*` denotes the variable of type T pointed to by x.
+
+```
+const x: u32 = 123;
+const ptr: *u32 = x.&;
+
+discard ptr.*; // = 123
+discard ptr.*.&.*.&.*.&; // addressing and dereferencing can be chained
+```
+
+Calls
+-----
+
+Given an expression f of function type F, `f(a1, a2, ... an)` *calls* f with arguments a1, a2, ... an. Arguments must be single-valued expressions assignable to the parameter types of F and are evaluated before the function is called. The type of the expression is the result type of F.
+
+```
+fn add_two(number: i32) i32 {
+    return number + 2;
+}
+
+const a: u32 = 17;
+const b: u32 = add_two(a + 3); // equivalent to (17 + 3) + 2 = 22
+```
+
+Operators
+---------
+
+Operators combine operands into expressions.
+
+```
+Expression = UnaryExpr | BinaryExpr | PipeExpr .
+UnaryExpr  = PrimaryExpr | unary_op UnaryExpr .
+BinaryExpr = Expression binary_op Expression .
+
+binary_op  = "||" | "&&" | rel_op | add_op | mul_op .
+rel_op     = "==" | "!=" | "<" | "<=" | ">" | ">=" .
+add_op     = "+" | "-" | "|" | "^" .
+mul_op     = "*" | "/" | "%" | "<<" | ">>" | "&" .
+
+unary_op   = "-" | "!" | "~" .
+```
+
+For binary expressions, the operand types must be identical.
+
+Operator precedence
+-------------------
+
+Unary operators have the highest precedence.
+
+There are five precedence levels for binary operators. Multiplication operators bind strongest, followed by addition operators, comparison operators, && (logical AND), and finally || (logical OR):
+
+```
+Precedence Operator
+
+5             *  /  %  <<  >>  &
+4             +  -  | ^
+3             ==  !=  <  <=  >  >=
+2             &&
+1             ||
+```
+
+Binary operators of the same precedence associate from left to right. For instance, `x / y * z` is the same as `(x / y) * z`.
+
+Arithmetic operators
+--------------------
+
+Arithmetic operators apply to numeric values and yield a result of the same type as the operands. The four standard arithmetic operators (+, -, *, /) apply to integer and floating-point types. The bitwise logical and shift operators apply to integers only.
+
+```
++    sum                    integers and floats
+-    difference             integers and floats
+*    product                integers and floats
+/    quotient               integers and floats
+%    remainder              integers
+
+&    bitwise AND            integers
+|    bitwise OR             integers
+^    bitwise XOR            integers
+
+<<   left shift             integer << integer >= 0
+>>   right shift            integer >> integer >= 0
+```
+
+Integer operators
+-----------------
+
+For two integer values x and y, the integer quotient `q = x / y` and remainder `r = x % y` satisfy the following relationships:
+
+```
+x = q*y + r  and  |r| < |y|
+```
+
+with x / y truncated towards zero.
+
+```
+ x     y     x / y     x % y
+ 5     3       1         2
+-5     3      -1        -2
+ 5    -3      -1         2
+-5    -3       1        -2
+```
+
+The shift operators shift the left operand by the shift count specified by the right operand, which must be non-negative. The shift operators implement arithmetic shifts if the left operand is a signed integer and logical shifts if it is an unsigned integer. There is no upper limit on the shift count. Shifts behave as if the left operand is shifted n times by 1 for a shift count of n. As a result, `x << 1` is the same as `x * 2` and `x >> 1` is the same as `x / 2` but truncated towards negative infinity.
+
+```
+ x     x / 4     x % 4     x >> 2     x & 3
+ 11      2         3         2          3
+-11     -2        -3        -3          1
+```
+
+For integer operands, the unary operators - and ~ are defined as follows:
+
+```
+-x    negation              is 0 - x
+~x    bitwise complement    is m ^ x  with m = "all bits set to 1" for unsigned x
+                                      and  m = -1 for signed x
+```
+
+Integer overflow
+----------------
+
+For unsigned integer values, the operations +, -, *, and \<< are computed modulo 2n, where n is the bit width of the unsigned integer's type. Loosely speaking, these unsigned integer operations discard high bits upon overflow, and programs may rely on "wrap around".
+
+For signed integers, the operations +, -, *, /, and \<< may legally overflow and the resulting value exists and is deterministically defined by the signed integer representation, the operation, and its operands. A compiler may not optimize code under the assumption that overflow does not occur. For instance, it may not assume that x < x + 1 is always true.
+
+Comparison operators
+--------------------
+
+Comparison operators compare two operands and yield a boolean value.
+
+```
+==    equal
+!=    not equal
+<     less
+<=    less or equal
+>     greater
+>=    greater or equal
+```
+
+In any comparison both operand must be of identical types.
+
+The equality operators `==` and `!=` apply to operands of *comparable types*. The ordering operators `<`, `<=`, `>`, and `>=` apply to operands of *ordered types*. These terms and the result of the comparisons are defined as follows:
+
+-	Boolean types are comparable. Two boolean values are equal if they are either both true or both false.
+-	Integer types are comparable and ordered. Two integer values are compared in the usual way.
+-	Floating-point types are comparable and ordered. Two floating-point values are compared as defined by the IEEE 754 standard.
+-	Pointer types are comparable. Two pointer values are equal if they point to the same memory.
+-	Slice types are comparable if they have the same element type. Two slice values are equal if they both have the same pointer and length.
+-	Nullable types are comparable and/or ordered if their underlying types are comparable and/or ordered. Two nullable values are equal if they are both null, otherwise the result of their comparasion is identical as if comparing their underlying values directly.
+
+All other types are not comparable.
+
+Logical operators
+-----------------
+
+Logical operators apply to boolean values and yield a result of the same type as the operands. The left operand is evaluated, and then the right if the condition requires it.
+
+```
+&&    conditional AND    p && q  is  "if p then q else false"
+||    conditional OR     p || q  is  "if p then true else q"
+!     NOT                !p      is  "not p"
 ```
