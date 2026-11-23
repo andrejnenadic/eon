@@ -66,7 +66,7 @@ Identifiers
 Identifiers name program entities such as variables and types. An identifier is a sequence of one or more letters and digits. The first character in an identifier must be a letter.
 
 ```
-identifier = letter { letter | ascii_digit } .
+Identifier = letter { letter | ascii_digit } .
 ```
 
 Some identifiers are predeclared.
@@ -251,7 +251,7 @@ A *type* determines a set of values together with operations and methods specifi
 
 ```
 Type     = TypeName | TypeLit .
-TypeName = identifier | FunctionName | FunctionInvocation | void .
+TypeName = Identifier | FunctionName | FunctionInvocation | void .
 TypeLit  = ArrayType | StructType | PointerType | FunctionType | EnumType | SliceType | NullableType .
 ```
 
@@ -589,8 +589,6 @@ Blocks
 
 A *block* is a possibly empty sequence of declarations and statements within matching brace brackets.
 
-A block is a *named block* if it is directly preceded by a label.
-
 ```
 Block         = "{" StatementList "}" .
 StatementList = { Statement ";" } .
@@ -622,7 +620,7 @@ An identifier declared in a block may not be redeclared in an inner block.
 Labels
 ------
 
-Labels are declared right before an opening brace bracket of a block and are used in the "break" and "continue" statements. It is illegal to define a label that is never used. In contrast to other identifiers, labels do not conflict with identifiers that are not labels. The scope of a label is the body of the function in which it is declared and excludes the body of any nested function.
+Labels are declared by labeled statements and are used in the `break` and `continue` statements. It is illegal to define a label that is never used. In contrast to other identifiers, labels do not conflict with identifiers that are not labels. The scope of a label is the body of the function in which it is declared and excludes the body of any nested function.
 
 Predeclared identifiers
 -----------------------
@@ -633,6 +631,7 @@ The following identifiers are implicitly declared in all scopes.
 Types:
     void
     type
+    module
     bool
     i8 i16 i32 i64
     u8 u16 u32 u64
@@ -697,7 +696,7 @@ It is illegal to define a function that is never used or exported.
 
 ```
 FunctionDecl = "fn" FunctionName Signature FunctionBody .
-FunctionName = identifier .
+FunctionName = Identifier .
 FunctionBody = Block .
 ```
 
@@ -718,7 +717,7 @@ Operands
 Operands denote the elementary values in an expression. An operand may be a literal, a named block, an identifier denoting a constant, variable, or function, or an expression.
 
 ```
-Operand     = Literal | identifier  [ TypeArgs ] | Expression .
+Operand     = Literal | Identifier | QualifiedIdent | Expression .
 Literal     = BasicLit | CompositeLit .
 BasicLit    = int_lit | float_lit | char_lit | string_lit .
 ```
@@ -729,7 +728,7 @@ Qualified identifiers
 A *qualified identifier* is an identifier qualified with a module name prefix.
 
 ```
-QualifiedIdent = ModuleName "::" identifier .
+QualifiedIdent = ModuleName "::" Identifier .
 ```
 
 A qualified identifier accesses an identifier in a different module, which must be imported. The identifier must be exported and declared in the module block of that module.
@@ -749,7 +748,7 @@ KeyedElementList   = KeyedElement { "," KeyedElement } .
 ElementList        = Element { "," Element } .
 KeyedElement       = Key ":" Element .
 Key                = FieldName | Expression | LiteralValue .
-FieldName          = identifier .
+FieldName          = Identifier .
 Element            = Expression | LiteralValue .
 ```
 
@@ -814,7 +813,7 @@ PrimaryExpr   = Operand |
                 PrimaryExpr Slice |
                 PrimaryExpr Arguments .
 
-Selector      = "." identifier .
+Selector      = "." Identifier .
 Index         = "." int_lit |
                 "." "[" Expression "]" .
 Slice         = "." "[" [ Expression ] ":" [ Expression ] "]" .
@@ -1044,19 +1043,22 @@ Logical operators apply to boolean values and yield a result of the same type as
 Pipe Expressions
 ----------------
 
-*Pipe expressions* are a special type of expressions which allow chaining an arbitrary number of expressions including other pipe expressions.
+*Pipe expressions* are a special type of expressions which allow *chaining* an arbitrary number of expressions including other pipe expressions.
 
 A *pipe operator* consists of its base form `|>` immediately preceded or followed by optional modifiers `|`, `>`, `?`, `!`, or `$`.
 
 ```
-PipeExpr     = Expression PipeOperator Expression .
-PipeOperator = [ "?" | "!" ] [ "$" ] [ "|" ] BasePipe [ ">" ] .
-BasePipe     = "|>"
+PipeExpr         = Expression PipeOperator ( Expression | ChainEndingStmt ) .
+ChainEndingStmt  = ReturnStmt | BreakStmt | DiscardStmt .
+PipeOperator     = [ "?" | "!" ] [ "$" ] [ "|" ] BasePipe [ ">" ] .
+BasePipe         = "|>"
 ```
 
 Fundamentally, a pipe passes the current value inside the *pipeline* to the next expression in the chain. A pipeline consists of a chain of expressions connected by pipes which can modify the singular value held inside the pipeline.
 
 Evaluating a pipeline means evaluating all expressions within it. A pipeline evaluates to type T if the last expression evaluated by a *thin pipe* gave result to a value of type T.
+
+A pipeline can act like a statement if the last thin pipe evaluates to void or leads to a *chain ending statement*, which may be a return, break, or discard statement.
 
 In terms of *modifying the value inside a pipeline*, pipes split into 2 mutually exclusive categories:
 
@@ -1126,4 +1128,371 @@ get_user_cart_by_id(x)                          // may return null
     !|> .{ items: .{}, price: 0 }               // if cart is null, create a default replacement
     |> cart_add_item(item)                      // this returns the added item
     |> discard;                                 // pass the value to discard in order to get the whole pipeline to evaluate to void
+```
+
+Import expressions
+------------------
+
+An *import expression* enables access to exported identifiers of specified module.
+
+It evaluates to a value of type `module` which contains all exported identifiers of said module which can be individually accessed using their fully qualified identifiers.
+
+```
+ImportDecl = "import" ImportPath
+ImportPath = string_lit .
+```
+
+```
+const math: module = import "math"; 
+discard math::floor(math::pi * 123.456);
+
+fn floor = (import "math")::floor;
+const pi: f64 = (import "math")::pi;
+
+pub const io: module = import "./input-output.eon"; // reexported (pub) relative import
+
+const tcp: module = (import "./networking.eon")::protocols::tcp; // nested modules
+```
+
+Statements
+==========
+
+Statements control execution.
+
+```
+Statement  = Declaration | LabeledStmt | EmptyStmt | ExpressionStmt | IncDecStmt |
+             ReturnStmt | BreakStmt | ContinueStmt | WhileStmt | Assignment |
+             Block | IfStmt | SwitchStmt | DeferStmt | DiscardStmt | Unreachable .
+```
+
+Terminating statements
+----------------------
+
+A *terminating statement* interrupts the regular flow of control in a block. The following statements are terminating:
+
+-	A "return" statement.
+-	A call to the built-in function panic.
+-	A block in which the statement list ends in a terminating statement.
+-	An "if" statement in which:
+	-	the "else" branch is present, and
+	-	both branches are terminating statements.
+-	A "while" statement in which:
+	-	there are no "break" statements referring to the "while" statement, and
+	-	the condition is always true
+-	A "switch" statement in which:
+	-	there is a default case, and
+	-	the statement lists in each case, including the default, end in a terminating statement
+-	A labeled statement labeling a terminating statement.
+
+All other statements are not terminating.
+
+A statement list ends in a terminating statement if the list is not empty and its final non-empty statement is terminating.
+
+Empty statements
+----------------
+
+The empty statement does nothing.
+
+```
+EmptyStmt = .
+```
+
+Labeled statements
+------------------
+
+A labeled statement may be the target of a break or continue statement.
+
+```
+LabeledStmt = Label ":" Statement .
+Label       = Identifier .
+```
+
+Executing a break statement from inside a labeled statement with that label as its target with a value x of type T evaluates the entire labeled statement to x. If there are paths in which the labeled statement reaches the end without an explicit break with a value of type T, labeled statement will evaluate to ?T.
+
+If a labeled statement contains break statements with that label as their targets with values x1, x2, ... xn of type T1, T2, ... Tn respectively, the labeled statement will evaluate to an implicitly declared union type `T1 | T2 | ... Tn`.
+
+If a labeled statement evaluates to a non void type, it is considered and treated as an expression.
+
+Expression statements
+---------------------
+
+All expressions can appear in statement context if they evaluate to void. An example of this is calling a void function or a pipe expression evaluating to void.
+
+```
+ExpressionStmt = Expression .
+```
+
+IncDec statements
+-----------------
+
+The "++" and "--" statements increment or decrement their operands by the untyped constant 1. As with an assignment, the operand must be addressable.
+
+```
+IncDecStmt = Expression ( "++" | "--" ) .
+```
+
+The following assignment statements are semantically equivalent:
+
+```
+IncDec statement    Assignment
+x++                 x += 1
+x--                 x -= 1
+```
+
+Assignment statements
+---------------------
+
+An *assignment* replaces the current value stored in a mutable variable with a new value specified by an expression.
+
+```
+Assignment         = ExpressionList ( assign_op | null_coalescing_op )  ExpressionList .
+assign_op          = [ add_op | mul_op ] "=" .
+null_coalescing_op = "??=" .
+```
+
+Each left-hand side operand must be addressable. Operands may be parenthesized.
+
+An assignment operation `x op= y` where op is a binary arithmetic operator is equivalent to `x = x op y` but evaluates x only once. The op= construct is a single token. In assignment operations, both the left- and right-hand expression lists must contain exactly one single-valued expression.
+
+An assignment operation `x ??= y`, called null null coalescing, replaces the current value storing in a mutable variable x if and only if the current value of x is null. This operator may only be used on variables of a nullable type.
+
+If statements
+-------------
+
+"If" statements specify the conditional execution of two branches according to the value of a boolean expression. If the expression evaluates to true, the "if" branch is executed, otherwise, if present, the "else" branch is executed.
+
+```
+IfStmt = "if" "(" Expression ")" [ CaptureDecl ] ( Block | Expression ) [ "else" ( IfStmt | ( Block | Expression ) ) ] .
+```
+
+Capturing may be used in case the expression inside the "if" statement was either pattern matching or a null check.
+
+If instead of a block, an "if" statement (and all its subsequent branches) uses an expression or a block which evaluates to a non void value, the entire statement evaluates to that value and is considered and treated as an expression.
+
+```
+const x: u32 = if (a == 3) 7 else 9; // if statement used as an expression
+
+if (x == 5) {
+    do_something(1);
+} else if (x == 3) {
+    do_something(2);
+} else do_something(3);
+
+if (some_nullable_field) |underlying_value| {
+    do_something(underlying_value.number);
+}
+```
+
+Switch statements
+-----------------
+
+"Switch" statements provide multi-way execution. An expression or type is compared to the "cases" inside the "switch" to determine which branch to execute.
+
+The expression on which the switch statement is being used is called the *operand expression*.
+
+```
+SwitchStmt = "switch" "(" Expression ")" "{" { CaseClause "," } "}" .
+CaseClause = ( Expression | "_" ) "=>" [ CaptureDecl ] ( Block | Expression ) .
+```
+
+Each case clause must have an expression fully resolvable during comptime.
+
+A switch statement must cover all possible cases for the type of the operand expression, or contain a *default* case written as an underscore ("_") which will be evaluated in case no other cases match. A default case must be placed below all other cases.
+
+Cases are compared to the operand expression using the default equality operation `==`; or in case of pattern matching, using the keyword `is`.
+
+In case the operand expression evaluates to a union type U, case clauses may contain types which are assignable to type U. In this case, the comparasion will be conducted using pattern matching and each case clause may include a capture declaration.
+
+If a single case clause evaluates to a non void value, the entire statement is considered and treated as an expression.
+
+```
+const x: u32 = switch (y) {
+    1 => 5,
+    3 + 2 => 99,
+    123 * 321 => 1,
+    _ => 0, // default case
+};
+
+switch (x) {
+    99 => {
+        do_something(4);
+    },
+    _ => do_something(5),
+}
+
+switch (some_union_value) { // some_union_value is of type (T1 | T2 | T3)
+    T1 => |t1_val| {
+        do_something(5);
+        do_something(t1_val.number;
+    },
+    T2 => do_something(3),
+    _ => |t3_val| do_something(t3_val.num), // default case catches the remaining possibilities regarding the original union which in this case is only type T3
+}
+```
+
+While statements
+----------------
+
+A *while statement* specifies repeated execution of an expression or a block which constitute the *loop's body*. It repeatedly executes an expression or a block until some condition is no longer true.
+
+An *iteration* represents a single execution of the loop's body.
+
+```
+ForStmt   = "while" "(" Condition ")" [ CaptureDecl ] [ ContinueExpr ] ( Block | Expression ) [ WhileElseExpr ] .
+Condition = Expression .
+ContinueExpr = ":" "(" Block | Expression ")"
+WhileElseExpr = "else" ( Block | Expression )
+```
+
+A `break` statement can be used to exit the loop early, while the `continue` statement can be used to end an iteration early and jump back to the start of the loop.
+
+The condition is evaluated before every iteration in order to decide whether to end the loop.
+
+Capturing may be used in case the conditional expression is either pattern matching or a null check.
+
+An optional *continue expression* may be included in a while statement which executes every time the loop is continued. The `continue` keyword respects this expression.
+
+A while statement may include an *else* clause which will be evaluated if the loop terminates by evaluating its condition expression as false.
+
+Executing a break statement from inside a while statement that targets that loop with a value x of type T evaluates the entire while statement to x. If there are paths in which the labeled statement reaches the end without an explicit break with a value of type T and the loop has no else branch, the while statement will evaluate to ?T.
+
+If a while statement contains break statements that target that loop with values x1, x2, ... xn of type T1, T2, ... Tn respectively, and an else clause evaluating to a value x0 of type T0, the while statement will evaluate to an implicitly declared union type `T0 | T1 | T2 | ... Tn`.
+
+If the while statement evaluates to a non void value, the entire statement is considered and treated as an expression.
+
+Return statements
+-----------------
+
+A *return statement* in a function F terminates the execution of F, and optionally provides a result value.
+
+```
+ReturnStmt = "return" [ Expression ] .
+```
+
+In a function with a `void` result type, a "return" statement must not specify a result value.
+
+It is illegal for a function with a non void result type to be missing a return statement in any of its execution branches.
+
+```
+fn add_two(number: i32) i32 {
+    return number + 2;
+}
+
+fn do_nothing() void {
+    return;
+}
+```
+
+A return statement may be used as a chain terminating statement at the end of a pipeline.
+
+Break statements
+----------------
+
+A *break statement* terminates execution of the innermost "while" statement, or if a label is specified, terminates the execution of that labeled statement.
+
+If a value is provided, break will evaluate the entire statement it is referring to to that value.
+
+```
+BreakStmt   = "break" [ LabelTarget ] [ Expression ] .
+LabelTarget = ":" Identifier .
+```
+
+It is illegal to call a break statement from outside a while loop without a label.
+
+```
+const x: u32 = x: { // evaluates to 25
+    var y = 0;
+    y++;
+    y *= 5;
+    break :x y * 5;
+};
+
+outer_loop: while (x > 0) : (x--) {
+    var y = 0;
+    while (y < 5) : (y++) {
+        if (y >= x) {
+            break :outer_loop;
+        }
+    }
+}
+```
+
+A break statement may be used as a chain terminating statement at the end of a pipeline either with or without a label.
+
+Continue statements
+-------------------
+
+A *continue statement* begins the next iteration of the innermost enclosing "while" loop, or if a label is specified, of that specific while loop.
+
+Continue statements respect continue expressions.
+
+```
+ContinueStmt = "continue" [ LabelTarget ] .
+```
+
+```
+var x = 25;
+outer_loop: while (x > 0) : (x--) {
+    var y = 0;
+    while (y < 5) : (y++) {
+        if (y >= 3 && x % 2 == 0) {
+            continue :outer_loop;
+        }
+    }
+}
+```
+
+Defer statements
+----------------
+
+A *defer statement* executes a void expression or a block unconditionally at scope exit.
+
+```
+DeferStmt = "defer" Expression | Block .
+```
+
+Defer statements are evaluated in reverse order.
+
+A defer statement may not contain a return statement.
+
+```
+// the following code prints: "2 1 ", assuming print is a function which writes the given string to stdout
+defer print("1 "); // print has result type of void
+defer {
+    print("2 ");
+}
+if (false) {
+    // defers are not run if they are never executed
+    defer {
+        print("3 ");
+    }
+}
+```
+
+Discard statements
+------------------
+
+A *discard statement* tells the compiler to ignore a value or a result of an expression.
+
+```
+DiscardStmt = "discard" Expression .
+```
+
+Explicitly discarding an unused value is the only legal way to ignore a result of an expression.
+
+Discarding a void value is illegal.
+
+A discard statement may be used as a chain terminating statement at the end of a pipeline.
+
+Unreachable statements
+----------------------
+
+An *unreachable statement* represents code that is never supposed to be executed.
+
+In debug mode, reaching an unreachable statement causes a panic.
+
+In release mode, the optimizer uses the assumption that unreachable code will never be hit to perform optimizations.
+
+```
+UnreachableStmt = "unreachable" .
 ```
