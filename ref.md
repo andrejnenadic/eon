@@ -79,8 +79,8 @@ The following keywords are reserved and may not be used as identifiers.
 ```
 const       if          continue        import
 var         else        as              struct
-function    switch      is              enum
-pub         while       defer
+fn          switch      is              enum
+pub         while       defer           unreachable
 return      break       discard
 ```
 
@@ -90,11 +90,11 @@ Operators
 The following character sequences represent operators (including assignment operators).
 
 ```
-+    &     +=    &=     &&    ==    !=    (    )    ??     ||>>    ?|>>     !||>
++    &     +=    &=     &&    ==    !=    (    )    ::     ||>>    ?|>>     !||>
 -    |     -=    |=     ||    <     <=    [    ]    ??=    $|>     ?||>>    &&=
 *    ^     *=    ^=     ++    >     >=    {    }    |>     $||>    ?$|>     ||=
 /    <<    /=    <<=    --    =           ,    ;    ||>    ?|>     ?$||>    <:
-%    >>    %=    >>=          !           .    :    |>>    ?||>    !|>      ::
+%    >>    %=    >>=    ~     !           .    :    |>>    ?||>    !|>
 ```
 
 Integer literals
@@ -108,7 +108,7 @@ For readability, an underscore character _ may appear after a base prefix or bet
 int_lit        = decimal_lit | binary_lit | octal_lit | hex_lit .
 decimal_lit    = "0" | ( "1" … "9" ) [ [ "_" ] decimal_digits ] .
 binary_lit     = "0" ( "b" | "B" ) [ "_" ] binary_digits .
-octal_lit      = "0" [ "o" | "O" ] [ "_" ] octal_digits .
+octal_lit      = "0" ( "o" | "O" ) [ "_" ] octal_digits .
 hex_lit        = "0" ( "x" | "X" ) [ "_" ] hex_digits .
 
 decimal_digits = decimal_digit { [ "_" ] decimal_digit } .
@@ -136,7 +136,7 @@ exponent  = ( "e" | "E" ) [ "+" | "-" ] decimal_digits .
 Char literals
 -------------
 
-A char literal represents a char constant, an integer value identifying a ASCII code point. A char literal is expressed as one or more characters enclosed in single quotes, as in 'x' or '\n'. Within the quotes, any character may appear except newline and unescaped single quote. A single quoted character represents the ascii value of the character itself, while multi-character sequences beginning with a backslash encode values in various formats.
+A char literal represents a char constant, an integer value identifying a ASCII code point. A char literal is expressed as a single character enclosed in single quotes, as in 'x' or '\n'. Within the quotes, any character may appear except newline and unescaped single quote. A single quoted character represents the ascii value of the character itself, while multi-character sequences beginning with a backslash encode values in various formats.
 
 The simplest form represents the single character within the quotes. An unrecognized character following a backslash in a char literal is illegal.
 
@@ -155,7 +155,7 @@ String literals
 
 A string literal represents a string constant obtained from concatenating a sequence of characters. There are two forms: raw string literals and interpreted string literals.
 
-Raw string literals are character sequences between back quotes, as in `foo`. Within the quotes, any character may appear except back quote. The value of a raw string literal is the string composed of the uninterpreted (implicitly UTF-8-encoded) characters between the quotes; in particular, backslashes have no special meaning and the string may contain newlines. Carriage return characters ('\r') inside raw string literals are discarded from the raw string value.
+Raw string literals are character sequences between back quotes, as in `foo`. Within the quotes, any character may appear except back quote. The value of a raw string literal is the string composed of the uninterpreted (implicitly ascii-encoded) characters between the quotes; in particular, backslashes have no special meaning and the string may contain newlines. Carriage return characters ('\r') inside raw string literals are discarded from the raw string value.
 
 Interpreted string literals are character sequences between double quotes, as in "bar". Within the quotes, any character may appear except newline and unescaped double quote. The text between the quotes forms the value of the literal, with backslash escapes interpreted as they are in char literals (except that \' is illegal and \" is legal), with the same restrictions.
 
@@ -203,7 +203,7 @@ const inv_cond_type: type = if (z == 321) u32 else bool;
 const w1: i32 = 123 * 321; 
 var w2: i32 = 555;
 const cond_type: type = if (w1 > w2) u32 else bool; 
-var w2 = read_number_from_stdin();
+w2 = read_number_from_stdin();
 
 var var_with_cond_type: cond_type;
 ```
@@ -236,8 +236,8 @@ Dot notation
 The dot notation is used to access individual fields, elements, addresses, or the underlying memory of a variable. Basically, it is used to access data within data.
 
 ```
-array.5                     // access the fifth element of 'array'
-array.[5]                   // access the fifth element of 'array'
+array.4                     // access the fifth element of 'array'
+array.[4]                   // access the fifth element of 'array'
 array.[i]                   // access the 'i'th element of 'array' where 'i' is a non-negative integer
 my_struct.some_field        // access a field named 'some_field'
 ptr.*                       // dereference the pointer 'ptr'
@@ -251,8 +251,8 @@ A *type* determines a set of values together with operations and methods specifi
 
 ```
 Type     = TypeName | TypeLit .
-TypeName = Identifier | FunctionName | FunctionInvocation | void .
-TypeLit  = ArrayType | StructType | PointerType | FunctionType | EnumType | SliceType | NullableType .
+TypeName = Identifier .
+TypeLit  = ArrayType | StructType | PointerType | FunctionPointerType | EnumType | SliceType | NullableType | UnionType .
 ```
 
 The language predeclares certain type names. Composite types—array, struct, pointer, function, interface, slice, map, and channel types—may be constructed using type literals.
@@ -344,7 +344,8 @@ Struct types
 A struct is a sequence of named elements, called fields, each of which has a name and a type. Field names must be specified explicitly and must be unique.
 
 ```
-StructType    = "struct" "{" { FieldDecl ";" } "}" .
+StructType    = "struct" [ "<:" TypeList ] "{" { FieldDecl ";" } "}" .
+TypeList      = Type { "," Type } .
 FieldDecl     = Identifier ":" Type .
 ```
 
@@ -370,6 +371,8 @@ const linked_list_t = struct {
 ```
 
 A struct type T0 may become a *subtype* (superset) of an arbitrary number of types Ti (where i > 0) in which case it must contain all of their combined fields and can be used in their place. Once a type T0 becomes a subtype of another type T1, that type (T1) becomes a *supertype* (subset) of the subtype type (T0).
+
+A subtype must redeclare all fields inherited from its supertypes.
 
 `<:` is the subtype operator from *type theory* and means "is a subtype of".
 
@@ -449,7 +452,7 @@ UnionType = CaseType { "|" CaseType }
 CaseType  = Type
 ```
 
-Active case type of an individual value of a union type must be explicitly checked before usage using the *pattern matching* keyword `is`, after which it can either be casted into the correct type, or depending on the context in which pattern matching was performed, it may be *captured* into the correct type.
+Active case type of an individual value of a union type must either be explicitly checked before usage using the *pattern matching*, *captured*, or explicitly *casted* into the desired type before usage.
 
 ```
 const byte: u8 = 'x';
@@ -475,7 +478,7 @@ const slice_from_union: []f32 = union as []f32;
 Pointer types
 -------------
 
-A pointer type denotes the set of all pointers to variables of a given type, called the base type of the pointer. The value of a pointer to a non-existant variable is null. Essentially, a pointer holds an address of a memory location holding its base type.
+A pointer type denotes the set of all pointers to variables of a given type, called the base type of the pointer. The value of a pointer to a non-existant variable is undefined. Essentially, a pointer holds an address of a memory location holding its base type.
 
 ```
 PointerType = "*" [ "const" ] BaseType .
@@ -493,14 +496,28 @@ ptr.* = 5; // same as 'x = 5;'
 A pointer type can only hold an address of a variable with *less or equal strictness* in terms of *mutability*. This means a mutable pointer can only point to a mutable variable, while an immutable pointer can point to either an immutable or mutable variable. If an immutable pointer points to a mutable variable, it can not be used to modify its value.
 
 ```
-var x: u32 = 123;
-const y: u32 = 321;
+const x: u32 = 123;
+var y: u32 = 321;
 
-var ptr: *const u32 = x.& // ptr holds the address of 'x'
+var ptr: *const u32 = x.&; // ptr holds the address of 'x'
 ptr.* = 5; // invalid, ptr points to an immutable value
 
 ptr = y.&; // valid, only pointed value is immutable, the actual variable holding the address (pointer) is still mutable
 ptr.* = 5; // invalid, even though ptr points to a mutable value it considers it immutable due to its own type
+
+const mut_ptr: *u32 = y.&;
+ptr = mut_ptr; // mut_ptr is less strict than ptr and can thus be assigned to it
+mut_ptr = ptr; // invalid
+```
+
+A *void pointer* type may hold an address to a value of an unknown type which may only be used after *casting* it into a "concrete" type.
+
+```
+var some_value: some_type_t = get_val();
+const ptr: *const some_type_t = &some_value;
+
+var void_ptr: *const void = ptr as *const void; 
+void_ptr = some_value.& as *const void;
 ```
 
 Nullable types
@@ -515,7 +532,7 @@ NullableType        = "?" UnderlyingValueType .
 UnderlyingValueType = Type .
 ```
 
-A value of a nullable type may only be used in a comparison against null in order to *unwrap it* into its underlying value type using the *capture* syntax.
+A nullable value must be explicitly unwrapped through a null comparasion or another explicitly defined null-handling operation before accessing its underlying data.
 
 If a fallback is provided for a nullable value immediately before use, it may be used as its underlying value without unwrapping.
 
@@ -544,7 +561,7 @@ The actual function pointer type only contains the address of the starting instr
 More broadly, a function defines *behaviour* which is why only its address can be kept as data.
 
 ```
-FunctionPointerType = "*" "fn" Signature .
+FunctionPointerType = "*" "const" "fn" Signature .
 Signature     = Parameters Result .
 Result        = Type .
 Parameters    = "(" [ ParameterList [ "," ] ] ")" .
@@ -583,6 +600,83 @@ A value x of type V is *assignable* to a variable of type T ("x is assignable to
 -	V and T are identical
 -	V is a subtype of T
 -	T is a union and V is a case type of T
+
+Casting
+-------
+
+*Casting* allows changing the type of a value x of type V to a type T if one of the following conditions applies:
+
+-	T and V are numeric types
+-	T or V is a void pointer
+-	A value of type V is assignable to a variable of type T
+-	V is a union type and T is one of its case types
+-	V is a nullable type and T is its underlying type
+
+If V and T are identical, the cast is a no-op.
+
+Casting a numeric type into a different numeric type performs the necessary value conversions in runtime.
+
+Casting a void pointer into a concrete type pointer is considered unsafe behaviour. It tells the compiler that casted pointer holds the address of valid data for the given type which the compiler has no way of verifying.
+
+Casting any pointer into a void pointer just strips compile time metadata.
+
+If a value of type V is assignable to a variable of type T, the cast is considered safe and performs no runtime operations.
+
+Casting a union type to one of its case types does not perform any runtime safety checks and is considered unsafe behaviour which should only be used in cases where other case types are not feasible in a way which the complier cannot verify (e.g. domain knowledge).
+
+Casting a nullable type to its underlying type does not perform any runtime safety checks and is considered unsafe behaviour which could result in illegal behaviour if the data being used is null.
+
+```
+Cast = Operand "as" TypeName .
+```
+
+```
+const x: u32 = 5;
+const y: i32 = x as i32;
+const z: f64 = x as f64;
+const w: f64 = z as f64;
+
+const a: *void = ptr as *void;
+const b: *T = a as *T;
+
+const sub: subtype_t = get_subtype_val();
+const sup: supertype_t = sub as supertype_t;
+
+const union: union_t = get_union_val();
+const case: case_t = union as case_t;
+
+const nullable: ?T = get_t();
+const stripped: T = nullable as T;
+```
+
+Pattern matching
+----------------
+
+*Pattern matching* can be used to check if a value x of type V is of type T.
+
+Pattern matching is evaluated during runtime if and only if V is a union type and T is one of its case types. In which case it will result in a value of `true` if the active case type of x is T, otherwise it will result in a value of `false`.
+
+In all other cases, pattern matching will be evaluated during compilation. If one of the following conditions applies, pattern matching will result in a value of `true`:
+
+-	V and T are identical
+-	V is a subtype of T
+
+Otherwise, pattern matching will result in a value of `false`.
+
+```
+PatternMatching = Operand "is" TypeName .
+```
+
+```
+const x: union_t = get_union();
+if (x is case_t) |case| { // evaluated during runtime
+    do_something(case);
+}
+
+const sub: subtype_t = get_subtype_val();
+const is_sup: bool = sub is supertype_t; // evaluated during compilation to true if subtype_t is a subtype or equal to supertype_t
+const is_u32: bool = sub is u32; // evaluated during compilation to false
+```
 
 Blocks
 ======
@@ -692,12 +786,15 @@ Function declarations
 
 A function declaration binds an identifier, the *function name*, to a function.
 
+Each function identifier may be used as a value of function pointer type. This allows function addresses to be stored inside variables.
+
 It is illegal to define a function that is never used or exported.
 
 ```
-FunctionDecl = "fn" FunctionName Signature FunctionBody .
-FunctionName = Identifier .
-FunctionBody = Block .
+FunctionDecl  = ( "fn" FunctionName Signature FunctionBody ) | FunctionAlias .
+FunctionAlias = "fn" FunctionName [ Signature ] "=" Expression .
+FunctionName  = Identifier .
+FunctionBody  = Block .
 ```
 
 ```
@@ -705,6 +802,8 @@ fn add_two(number: i32) i32 {
     return number + 2;
 }
 ```
+
+A *function alias* declaration binds an identifier to an already existing function's address. If a signature is specified explicitly the provided function pointer must have the exact same signature, if no signature is specified the alias will assume the correct signature based on the function pointer type.
 
 Expressions
 ===========
@@ -717,7 +816,7 @@ Operands
 Operands denote the elementary values in an expression. An operand may be a literal, a named block, an identifier denoting a constant, variable, or function, or an expression.
 
 ```
-Operand     = Literal | Identifier | QualifiedIdent | Expression .
+Operand     = Literal | Identifier | QualifiedIdent | ImportExpr | Expression .
 Literal     = BasicLit | CompositeLit .
 BasicLit    = int_lit | float_lit | char_lit | string_lit .
 ```
@@ -728,10 +827,18 @@ Qualified identifiers
 A *qualified identifier* is an identifier qualified with a module name prefix.
 
 ```
-QualifiedIdent = ModuleName "::" Identifier .
+QualifiedIdent = ModuleName "::" ( QualifiedIdent | Identifier ) .
+ModuleName = Identifier .
 ```
 
-A qualified identifier accesses an identifier in a different module, which must be imported. The identifier must be exported and declared in the module block of that module.
+A qualified identifier accesses an identifier from a different module, which must be imported. The identifier must be exported and declared in the module block of that module.
+
+Nested module access can be achieved by chaining multiple qualified identifier accesses.
+
+```
+discard module1::some_fn();
+discard module1::module2::module3::module4::module5::some_var;
+```
 
 Composite literals
 ------------------
@@ -740,7 +847,7 @@ Composite literals construct new values for structs and arrays.
 
 ```
 CompositeLit       = [LiteralType] LiteralValue .
-LiteralType        = StructType | ArrayType .
+LiteralType        = Type .
 LiteralValue       = StructLiteralValue | ArrayLiteralValue
 StructLiteralValue = "." "{" [ KeyedElementList [ "," ] ] "}"
 ArrayLiteralValue  = "." "{" [ ElementList [ "," ] ] "}"
@@ -808,6 +915,7 @@ Primary expressions are the operands for unary and binary expressions.
 ```
 PrimaryExpr   = Operand |
                 Cast |
+                PatternMatching |
                 PrimaryExpr Selector |
                 PrimaryExpr Index |
                 PrimaryExpr Slice |
@@ -865,7 +973,7 @@ For convenience, any of the indices may be omitted. A missing low index defaults
 
 ```
 const a: [5]f32 = .{ 1, 2, 3, 4, 5 };
-const s: []f32 = a.[1:3]; // = .{ 2, 3, 4 }
+const s: []f32 = a.[1:3]; // = .{ 2, 3 }
 
 discard a.[2:];  // same as a[2 : a.len]
 discard a.[:3];  // same as a[0 : 3]
@@ -881,7 +989,7 @@ For an operand x of pointer type *T, the *pointer indirection* (dereferencing) `
 
 ```
 const x: u32 = 123;
-const ptr: *u32 = x.&;
+const ptr: *const u32 = x.&;
 
 discard ptr.*; // = 123
 discard ptr.*.&.*.&.*.&; // addressing and dereferencing can be chained
@@ -911,8 +1019,9 @@ Expression = UnaryExpr | BinaryExpr | PipeExpr .
 UnaryExpr  = PrimaryExpr | unary_op UnaryExpr .
 BinaryExpr = Expression binary_op Expression .
 
-binary_op  = "||" | "&&" | rel_op | add_op | mul_op .
+binary_op  = logical_op | rel_op | add_op | mul_op .
 rel_op     = "==" | "!=" | "<" | "<=" | ">" | ">=" .
+logical_op = "||" | "&&"
 add_op     = "+" | "-" | "|" | "^" .
 mul_op     = "*" | "/" | "%" | "<<" | ">>" | "&" .
 
@@ -998,7 +1107,7 @@ For integer operands, the unary operators - and ~ are defined as follows:
 Integer overflow
 ----------------
 
-For unsigned integer values, the operations +, -, *, and \<< are computed modulo 2n, where n is the bit width of the unsigned integer's type. Loosely speaking, these unsigned integer operations discard high bits upon overflow, and programs may rely on "wrap around".
+For unsigned integer values, the operations +, -, *, and \<< are computed modulo 2^n, where n is the bit width of the unsigned integer's type. Loosely speaking, these unsigned integer operations discard high bits upon overflow, and programs may rely on "wrap around".
 
 For signed integers, the operations +, -, *, /, and \<< may legally overflow and the resulting value exists and is deterministically defined by the signed integer representation, the operation, and its operands. A compiler may not optimize code under the assumption that overflow does not occur. For instance, it may not assume that x < x + 1 is always true.
 
@@ -1025,7 +1134,7 @@ The equality operators `==` and `!=` apply to operands of *comparable types*. Th
 -	Floating-point types are comparable and ordered. Two floating-point values are compared as defined by the IEEE 754 standard.
 -	Pointer types are comparable. Two pointer values are equal if they point to the same memory.
 -	Slice types are comparable if they have the same element type. Two slice values are equal if they both have the same pointer and length.
--	Nullable types are comparable and/or ordered if their underlying types are comparable and/or ordered. Two nullable values are equal if they are both null, otherwise the result of their comparasion is identical as if comparing their underlying values directly.
+-	Nullable types are comparable and/or ordered if their underlying types are comparable and/or ordered. Two nullable values are equal if they are both null, otherwise the result of their comparasion is identical as if comparing their underlying values directly. If exactly one operand is null, the equality comparasion is always false and ordering comparasions are illegal.
 
 All other types are not comparable.
 
@@ -1056,7 +1165,20 @@ BasePipe         = "|>"
 
 Fundamentally, a pipe passes the current value inside the *pipeline* to the next expression in the chain. A pipeline consists of a chain of expressions connected by pipes which can modify the singular value held inside the pipeline.
 
-Evaluating a pipeline means evaluating all expressions within it. A pipeline evaluates to type T if the last expression evaluated by a *thin pipe* gave result to a value of type T.
+Evaluating a pipeline means evaluating all expressions within it left to right. A pipeline evaluates to type T if the last expression evaluated by a *thin pipe* gave result to a value of type T.
+
+A pipe has a lower precedence than all operators used inside the expression on its left, and a higher precedence than all operators used inside the expression on the right.
+
+```
+1 + 2 |> print(); // same as:
+(1 + 2) |> print();
+
+3 * 4 |> print(); // same as:
+(3 * 4) |> print(); 
+
+5 - 3 $|> $ * 7 |> print(); // same as:
+((5 - 3) $|> ($ * 7)) |> print();
+```
 
 A pipeline can act like a statement if the last thin pipe evaluates to void or leads to a *chain ending statement*, which may be a return, break, or discard statement.
 
@@ -1111,7 +1233,7 @@ Terminating a pipeline means preventing any further expressions within the termi
 ```
 const x: u32 = 5;
 
-x |> add_two() | print_number(); // same as print_number(add_two(x))
+x |> add_two() |> print_number(); // same as print_number(add_two(x))
 
 // more extreme example
 const header: ?[]u8 = add_five(x)               // starting value inside the pipeline is the result of add_five(5)
@@ -1122,7 +1244,7 @@ const header: ?[]u8 = add_five(x)               // starting value inside the pip
     $|> $.username                              // continue the pipeline with the user's username
     $||> log_info($.[5:])                       // log out the user's username past the fifth character
     |> user_attempt_auth(password)              // user_attempt_auth(username, password), say this returns a cookie if successful and null on failure
-    ?|>> write_http_header(.Auth);              // if cookie is not null executes write_http_header(.Auth, cookie), if it is null terminates
+    ?|>> write_http_header(.auth);              // if cookie is not null executes write_http_header(.Auth, cookie), if it is null terminates
 
 get_user_cart_by_id(x)                          // may return null
     !|> .{ items: .{}, price: 0 }               // if cart is null, create a default replacement
@@ -1138,7 +1260,7 @@ An *import expression* enables access to exported identifiers of specified modul
 It evaluates to a value of type `module` which contains all exported identifiers of said module which can be individually accessed using their fully qualified identifiers.
 
 ```
-ImportDecl = "import" ImportPath
+ImportExpr = "import" ImportPath
 ImportPath = string_lit .
 ```
 
@@ -1162,7 +1284,7 @@ Statements control execution.
 ```
 Statement  = Declaration | LabeledStmt | EmptyStmt | ExpressionStmt | IncDecStmt |
              ReturnStmt | BreakStmt | ContinueStmt | WhileStmt | Assignment |
-             Block | IfStmt | SwitchStmt | DeferStmt | DiscardStmt | Unreachable .
+             Block | IfStmt | SwitchStmt | DeferStmt | DiscardStmt | UnreachableStmt .
 ```
 
 Terminating statements
@@ -1246,7 +1368,7 @@ An *assignment* replaces the current value stored in a mutable variable with a n
 
 ```
 Assignment         = ExpressionList ( assign_op | null_coalescing_op )  ExpressionList .
-assign_op          = [ add_op | mul_op ] "=" .
+assign_op          = [ add_op | mul_op | logical_op ] "=" .
 null_coalescing_op = "??=" .
 ```
 
@@ -1286,13 +1408,13 @@ if (some_nullable_field) |underlying_value| {
 Switch statements
 -----------------
 
-"Switch" statements provide multi-way execution. An expression or type is compared to the "cases" inside the "switch" to determine which branch to execute.
+"Switch" statements provide multi-way execution. An expression is compared to the "cases" inside the "switch" to determine which branch to execute.
 
 The expression on which the switch statement is being used is called the *operand expression*.
 
 ```
-SwitchStmt = "switch" "(" Expression ")" "{" { CaseClause "," } "}" .
-CaseClause = ( Expression | "_" ) "=>" [ CaptureDecl ] ( Block | Expression ) .
+SwitchStmt = "switch" "(" Expression ")" "{" { CaseClause ";" } "}" .
+CaseClause = ( Type | Expression | "_" ) "=>" [ CaptureDecl ] ( Block | Expression ) .
 ```
 
 Each case clause must have an expression fully resolvable during comptime.
@@ -1307,26 +1429,26 @@ If a single case clause evaluates to a non void value, the entire statement is c
 
 ```
 const x: u32 = switch (y) {
-    1 => 5,
-    3 + 2 => 99,
-    123 * 321 => 1,
-    _ => 0, // default case
+    1 => 5;
+    3 + 2 => 99;
+    123 * 321 => 1;
+    _ => 0; // default case
 };
 
 switch (x) {
     99 => {
         do_something(4);
-    },
-    _ => do_something(5),
+    };
+    _ => do_something(5);
 }
 
 switch (some_union_value) { // some_union_value is of type (T1 | T2 | T3)
     T1 => |t1_val| {
         do_something(5);
         do_something(t1_val.number;
-    },
-    T2 => do_something(3),
-    _ => |t3_val| do_something(t3_val.num), // default case catches the remaining possibilities regarding the original union which in this case is only type T3
+    };
+    T2 => do_something(3);
+    _ => |t3_val| do_something(t3_val.num); // default case catches the remaining possibilities regarding the original union which in this case is only type T3
 }
 ```
 
@@ -1338,9 +1460,9 @@ A *while statement* specifies repeated execution of an expression or a block whi
 An *iteration* represents a single execution of the loop's body.
 
 ```
-ForStmt   = "while" "(" Condition ")" [ CaptureDecl ] [ ContinueExpr ] ( Block | Expression ) [ WhileElseExpr ] .
-Condition = Expression .
-ContinueExpr = ":" "(" Block | Expression ")"
+WhileStmt     = "while" "(" Condition ")" [ CaptureDecl ] [ ContinueExpr ] ( Block | Expression ) [ WhileElseExpr ] .
+Condition     = Expression .
+ContinueExpr  = ":" "(" Block | Expression ")"
 WhileElseExpr = "else" ( Block | Expression )
 ```
 
@@ -1371,7 +1493,7 @@ ReturnStmt = "return" [ Expression ] .
 
 In a function with a `void` result type, a "return" statement must not specify a result value.
 
-It is illegal for a function with a non void result type to be missing a return statement in any of its execution branches.
+A function with a non-void result type must not have any reachable execution path that reaches the end of its body without returning a compatible value.
 
 ```
 fn add_two(number: i32) i32 {
@@ -1400,7 +1522,7 @@ LabelTarget = ":" Identifier .
 It is illegal to call a break statement from outside a while loop without a label.
 
 ```
-const x: u32 = x: { // evaluates to 25
+var x: u32 = x: { // evaluates to 25
     var y = 0;
     y++;
     y *= 5;
